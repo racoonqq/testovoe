@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Document</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .task-container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .task-input {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input, textarea, select, button {
+            padding: 10px;
+            border: 1px solid #d0d0d0;
+            border-radius: 4px;
+        }
+        .task-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        .task-item {
+            background-color: #f9f9f9;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+        }
+        .task-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .task-status {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.8em;
+        }
+        .status-pending { background-color: #fef3c7; color: #92400e; }
+        .status-in-progress { background-color: #e0f2fe; color: #0369a1; }
+        .status-completed { background-color: #d1fae5; color: #065f46; }
+        .task-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        button {
+            background-color: #6b7280;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #4b5563;
+        }
+        .delete-btn {
+            background-color: #ef4444;
+        }
+        .delete-btn:hover {
+            background-color: #dc2626;
+        }
+        .edit-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="task-container">
+        <div class="task-header">
+            <h2>Управление задачами</h2>
+        </div>
+        
+        <div class="task-input">
+            <input type="text" id="taskTitle" placeholder="Заголовок задачи *" required>
+            <textarea id="taskDescription" placeholder="Описание задачи (необязательно)"></textarea>
+            <select id="taskStatus">
+                <option value="pending">Ожидание</option>
+                <option value="in progress">В процессе</option>
+                <option value="completed">Завершено</option>
+            </select>
+            <button onclick="addTask()">Добавить задачу</button>
+        </div>
+
+        <ul id="taskList" class="task-list"></ul>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/api/tasks';
+
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            setTimeout(() => errorElement.textContent = '', 3000);
+        }
+
+        async function fetchTasks() {
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) throw new Error('Ошибка загрузки задач');
+                const tasks = await response.json();
+                renderTasks(tasks);
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        function renderTasks(tasks) {
+            const taskList = document.getElementById('taskList');
+            
+            if (tasks.length === 0) {
+                taskList.innerHTML = 'Задач пока нет';
+                return;
+            }
+
+            taskList.innerHTML = tasks.map(task => `
+                <div class="task-item">
+                    <div class="task-details">
+                        <h3>${task.title}</h3>
+                        <p>${task.description || 'Нет описания'}</p>
+                        <span class="status-${task.status}">${
+                            task.status === 'pending' ? 'Ожидание' : 
+                            task.status === 'in progress' ? 'В процессе' : 
+                            'Завершено'
+                        }</span>
+                    </div>
+                    <div class="task-actions">
+                        <button onclick="editTask(${task.id})">Изменить</button>
+                        <button onclick="deleteTask(${task.id})">Удалить</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function addTask() {
+            const titleInput = document.getElementById('taskTitle');
+            const descriptionInput = document.getElementById('taskDescription');
+            const statusSelect = document.getElementById('taskStatus');
+
+            const title = titleInput.value.trim();
+            const description = descriptionInput.value.trim();
+            const status = statusSelect.value;
+
+            if (!title) {
+                showError('Заголовок задачи обязателен!');
+                return;
+            }
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        title, 
+                        description: description || null, 
+                        status 
+                    })
+                });
+
+                if (!response.ok) throw new Error('Ошибка создания задачи');
+
+                // Очистка полей
+                titleInput.value = '';
+                descriptionInput.value = '';
+                statusSelect.value = 'pending';
+
+                // Обновление списка задач
+                await fetchTasks();
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        async function editTask(id) {
+            try {
+                // Получаем текущую задачу
+                const response = await fetch(`${API_URL}/${id}`);
+                if (!response.ok) throw new Error('Ошибка получения задачи');
+                
+                const task = await response.json();
+                
+                // Диалог редактирования (в реальном приложении лучше использовать модальное окно)
+                const newTitle = prompt('Новый заголовок', task.title);
+                const newDescription = prompt('Новое описание', task.description || '');
+                const newStatus = prompt('Новый статус (pending/in progress/completed)', task.status);
+
+                if (newTitle) {
+                    const updateResponse = await fetch(`${API_URL}/${id}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            title: newTitle,
+                            description: newDescription || null,
+                            status: newStatus || task.status
+                        })
+                    });
+
+                    if (!updateResponse.ok) throw new Error('Ошибка обновления задачи');
+                    
+                    // Обновление списка задач
+                    await fetchTasks();
+                }
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        async function deleteTask(id) {
+            if (confirm('Вы уверены, что хотите удалить задачу?')) {
+                try {
+                    const response = await fetch(`${API_URL}/${id}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (!response.ok) throw new Error('Ошибка удаления задачи');
+
+                    // Обновление списка задач
+                    await fetchTasks();
+                } catch (error) {
+                    showError(error.message);
+                }
+            }
+        }
+
+        // Инициализация при загрузке
+        document.addEventListener('DOMContentLoaded', fetchTasks);
+    </script>
+    </body>
+</html>
